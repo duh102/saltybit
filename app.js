@@ -12,7 +12,7 @@ var request = request.defaults({jar: true});
 var mySaltyBucks = null;
 var baseLine = null;
 var db = new sqlite3.Database('./salty.db');
-var players = {};
+
 
 request.post('http://www.saltybet.com/authenticate?signin=1')
   .form({email: config.email, pword: config.password, authenticate: "signin"});
@@ -20,10 +20,6 @@ request.post('http://www.saltybet.com/authenticate?signin=1')
 db.exec('CREATE TABLE IF NOT EXISTS fight(p1 INTEGER, p2 INTEGER, winner INTEGER, p1amount INTEGER, p2amount INTEGER, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(p1) REFERENCES player(id), FOREIGN KEY(p2) REFERENCES player(id));'
        +'CREATE TABLE IF NOT EXISTS player(id INTEGER primary key, name TEXT)', function(err) {
   if(err) return console.log(err);
-});
-
-db.each('SELECT id, name FROM player ORDER BY id', function(err, row) {
-  players[row.name] = row.id;
 });
 
 sock.on("message", function(data) {
@@ -69,38 +65,18 @@ function updateState() {
     //logging outcomes
     else if(s.status === "1" || s.status === "2") {
       //keeping the in-memory hash up to date
-      if(typeof players[s.p1name] === 'undefined') {
-        db.prepare('INSERT INTO player (name) VALUES ($name)', {$name: s.p1name}, function(err) {
+      db.serialize(function() {
+        db.run('INSERT OR IGNORE INTO player (name) VALUES (?)', [s.p1name], function(err) {
           if(err) console.log(err);
-        }).get(function(err, row) {
+        }).run('INSERT OR IGNORE INTO player (name) VALUES (?)', [s.p2name], function(err) {
           if(err) console.log(err);
-        })
-        db.prepare('SELECT id FROM player WHERE name = $name', {$name: s.p1name}, function(err) {
-          if(err) console.log(err);
-        }).get(function(err, row) {
-          if(err) console.log(err);
-          players[s.p1name] = row.id;
         });
-        console.log(players)
-      }
-      if(typeof players[s.p2name] === 'undefined') {
-        db.prepare('INSERT INTO player (name) VALUES ($name)', {$name: s.p2name}, function(err) {
-          if(err) console.log(err);
-        }).exec(function(err) {
-          if(err) console.log(err);
-        })
-        db.prepare('SELECT id FROM player WHERE name = $name', {$name: s.p2name}, function(err) {
-          if(err) console.log(err);
-        }).get(function(err, row) {
-          if(err) console.log(err);
-          players[s.p2name] = row.id;
-        });
-      }
-      var stmnt = db.prepare('INSERT INTO fight (p1, p2, winner, p1amount, p2amount) VALUES ($player1, $player2, $winner, $p1amount, $p2amount)',
-        {$player1: players[s.p1name], $player2: players[s.p2name], $winner: s.status==="1"? 1:2, $p1amount: s.p1total, $p2amount: s.p2total},
-        function(err) {
-          if(err) console.log(err);
+        var stmnt = db.prepare('INSERT INTO fight (p1, p2, winner, p1amount, p2amount) VALUES ((SELECT id FROM player WHERE name = ?), (SELECT id FROM player WHERE name = ?), ?, ?, ?)',
+          [s.p1name, s.p2name, s.status==="1"? 1:2, s.p1total, s.p2total],
+          function(err) {
+            if(err) console.log(err);
         }).get();
+      });
     }
   });
 
@@ -121,15 +97,19 @@ function updateState() {
 
 if(config.serveApi) {
   http.createServer(function(req,res) {
-    var ranking ={};
+    var ranking = {};
     var matchrecord = {};
-    var i =0;
+    var players = {};
+    db.each('SELECT id, name FROM player ORDER BY id', function(err, row) {
+      players[row.id] = row.name;
+    });
+    var i = 0;
     db.each('SELECT name, COUNT(*) as wins FROM player, fight WHERE (p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2) GROUP BY player.id ORDER BY wins DESC',
       function(err, row) {
         if(err) console.log(err);
         ranking[i++] ={name: row.name, wins: row.id};
     });
-    i=0;
+    var i2 = 0;
     db.each('SELECT COUNT(*) as matches, p1.name as p1name, p2.name as p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id GROUP BY p1, p2, winner',
       function(err, row) {
         if(err) console.log(err);
