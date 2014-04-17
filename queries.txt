@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS player(id INTEGER primary key, name TEXT)
+CREATE TABLE IF NOT EXISTS fight(p1 INTEGER, p2 INTEGER, winner INTEGER, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(p1) REFERENCES player(id), FOREIGN KEY(p2) REFERENCES player(id))
+
+INSERT INTO player (name) VALUES (:name)
+INSERT INTO fight (p1, p2, winner) VALUES (:player1, :player2, :winner)
+
+SELECT id FROM player WHERE name = :name
+
+SELECT name, COUNT(*) FROM player, fight WHERE (p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2) GROUP BY player.id ORDER BY player.name
+SELECT COUNT(*), p1.name, p2.name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id GROUP BY p1, p2, winner
