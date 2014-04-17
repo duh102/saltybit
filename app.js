@@ -3,6 +3,7 @@ var http = require('http');
 var request = require('request');
 var config = require("./config");
 var http = require("http");
+var sqlite3 = require('sqlite3');
 
 var sock = io.connect("http://www-cdn-twitch.saltybet.com:8000");
 
@@ -51,7 +52,7 @@ function updateState() {
   request("http://www.saltybet.com/state.json", function(e,r,body) {
     console.log(body);
     var s = JSON.parse(body);
-    if(s.status == "open") {
+    if(false && s.status == "open") {
       placeBet();
     }
   });
