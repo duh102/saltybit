@@ -12,26 +12,47 @@ SELECT id, name FROM player ORDER BY id
 
 --single person's profits
 SELECT name, SUM(profit) FROM
-(SELECT name, SUM(p2amount) as profit FROM player, fight WHERE p1 = player.id AND winner = 1 AND player.name = ?
+(SELECT name, SUM(p2amount) AS profit FROM player, fight WHERE p1 = player.id AND winner = 1 AND player.name = ?
 UNION
-SELECT name, SUM(p1amount) as profit FROM player, fight WHERE p2 = player.id AND winner = 2 AND player.name = ?)
+SELECT name, SUM(p1amount) AS profit FROM player, fight WHERE p2 = player.id AND winner = 2 AND player.name = ?)
 
 --all persons' profits, sorted by amount
-SELECT name, SUM(profit) as totalprofit FROM
-(SELECT name, SUM(p2amount) as profit FROM player, fight WHERE p1 = player.id AND winner = 1 GROUP BY p1
+SELECT name, SUM(profit) AS totalprofit FROM
+(SELECT name, SUM(p2amount) AS profit FROM player, fight WHERE p1 = player.id AND winner = 1 GROUP BY p1
 UNION
-SELECT name, SUM(p1amount) as profit FROM player, fight WHERE p2 = player.id AND winner = 2 GROUP BY p2)
+SELECT name, SUM(p1amount) AS profit FROM player, fight WHERE p2 = player.id AND winner = 2 GROUP BY p2)
 GROUP BY name
 ORDER BY totalprofit DESC
 
 --ranking of wins for a particular set of players
-SELECT name, COUNT(*) as wins FROM player, fight WHERE ((p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2)) AND (player.name = ? OR player.name = ?) GROUP BY player.id
+SELECT name, COUNT(*) AS wins FROM player, fight WHERE ((p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2)) AND (player.name = ? OR player.name = ?) GROUP BY player.id
 
 --ranking of wins
-SELECT name, COUNT(*) as wins FROM player, fight WHERE (p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2) GROUP BY player.id ORDER BY wins DESC
+SELECT name, COUNT(*) AS wins FROM player, fight WHERE (p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2) GROUP BY player.id ORDER BY wins DESC
 
 --ranking of matches
-SELECT COUNT(*) as matches, p1.name as p1name, p2.name as p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id GROUP BY p1, p2, winner
+SELECT COUNT(*) AS matches, p1.name AS p1name, p2.name AS p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id GROUP BY p1, p2, winner
 
 --matches for a particular pairing
-SELECT COUNT(*) as matches, p1.name as p1name, p2.name as p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id AND ((p1.name = ?1 AND p2.name = ?2) OR (p1.name = ?2 AND p2.name = ?1)) GROUP BY p1, p2, winner
+SELECT COUNT(*) AS matches, p1.name AS p1name, p2.name AS p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id AND ((p1.name = ?1 AND p2.name = ?2) OR (p1.name = ?2 AND p2.name = ?1)) GROUP BY p1, p2, winner
+
+--coalesced win/loss record, sorted by win/loss record deemed more accurate
+--after 3 matches (so 3+ wins with no defeats is better than 6w/3l, but 1w/0l is not)
+SELECT pwin.id AS id, pwin.name AS name, pwin.wins AS wins, plose.losses AS losses FROM
+(SELECT p1.id, p1.name, coalesce(wins, 0) AS wins FROM
+((SELECT id, name from player) p1
+LEFT OUTER JOIN
+(SELECT id, COUNT(*) AS wins FROM player, fight WHERE
+(p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2)
+ GROUP BY player.id) p2
+ON p1.id = p2.id)) pwin
+INNER JOIN
+(SELECT p1.id, p1.name, coalesce(losses, 0) AS losses FROM
+((SELECT id, name from player) p1
+LEFT OUTER JOIN
+(SELECT id, COUNT(*) AS losses FROM player, fight WHERE
+(p1 = player.id AND winner = 2) OR (p2 = player.id AND winner = 1)
+ GROUP BY player.id) p2
+ON p1.id = p2.id)) plose
+ON pwin.id = plose.id
+ORDER BY ((pwin.wins+3)/(plose.losses+3)) DESC, pwin.wins DESC
