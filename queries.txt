@@ -1,10 +1,14 @@
 CREATE TABLE IF NOT EXISTS player(id INTEGER primary key, name TEXT)
-CREATE TABLE IF NOT EXISTS fight(p1 INTEGER, p2 INTEGER, winner INTEGER, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(p1) REFERENCES player(id), FOREIGN KEY(p2) REFERENCES player(id))
+CREATE TABLE IF NOT EXISTS fight(p1 INTEGER, p2 INTEGER, winner INTEGER, p1amount INTEGER, p2amount INTEGER, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(p1) REFERENCES player(id), FOREIGN KEY(p2) REFERENCES player(id))
 
-INSERT INTO player (name) VALUES (:name)
-INSERT INTO fight (p1, p2, winner) VALUES (:player1, :player2, :winner)
+INSERT INTO player (name) VALUES ($name)
+INSERT INTO fight (p1, p2, winner, p1amount, p2amount) VALUES ($player1, $player2, $winner, $player1amount, $player2amount)
 
-SELECT id FROM player WHERE name = :name
+SELECT id FROM player WHERE name = $name
 
-SELECT name, COUNT(*) FROM player, fight WHERE (p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2) GROUP BY player.id ORDER BY player.name
-SELECT COUNT(*), p1.name, p2.name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id GROUP BY p1, p2, winner
+
+SELECT id, name FROM player ORDER BY id
+SELECT name, COUNT(*) as wins FROM player, fight WHERE (p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2) GROUP BY player.id ORDER BY wins DESC
+SELECT COUNT(*) as matches, p1.name as p1name, p2.name as p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id GROUP BY p1, p2, winner
+
+SELECT COUNT(*) as matches, p1.name as p1name, p2.name as p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id AND ((p1.name = ?1 AND p2.name = ?2) OR (p1.name = ?2 AND p2.name = ?1)) GROUP BY p1, p2, winner
