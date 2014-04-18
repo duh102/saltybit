@@ -19,7 +19,7 @@ request.post('http://www.saltybet.com/authenticate?signin=1')
   .form({email: config.email, pword: config.password, authenticate: "signin"});
 
 db.exec('CREATE TABLE IF NOT EXISTS fight(p1 INTEGER, p2 INTEGER, winner INTEGER, p1amount INTEGER, p2amount INTEGER, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(p1) REFERENCES player(id), FOREIGN KEY(p2) REFERENCES player(id));'
-       +'CREATE TABLE IF NOT EXISTS player(id INTEGER primary key, name TEXT)', function(err) {
+       +'CREATE TABLE IF NOT EXISTS player(id INTEGER primary key, name TEXT UNIQUE ON CONFLICT IGNORE)', function(err) {
   if(err) return console.log(err);
 });
 
@@ -131,17 +131,16 @@ function updateState() {
     //logging outcomes
     else if(s.status === "1" || s.status === "2") {
       //keeping the in-memory hash up to date
-      db.serialize(function() {
         db.run('INSERT OR IGNORE INTO player (name) VALUES (?)', [s.p1name], function(err) {
           if(err) console.log(err);
-        }).run('INSERT OR IGNORE INTO player (name) VALUES (?)', [s.p2name], function(err) {
-          if(err) console.log(err);
-        });
-        var stmnt = db.prepare('INSERT INTO fight (p1, p2, winner, p1amount, p2amount) VALUES ((SELECT id FROM player WHERE name = ?), (SELECT id FROM player WHERE name = ?), ?, ?, ?)',
-          [s.p1name, s.p2name, s.status==="1"? 1:2, s.p1total.replace(/,/g,''), s.p2total.replace(/,/g,'')],
-          function(err) {
+          db.run('INSERT OR IGNORE INTO player (name) VALUES (?)', [s.p2name], function(err) {
             if(err) console.log(err);
-        }).get();
+            var stmnt = db.prepare('INSERT INTO fight (p1, p2, winner, p1amount, p2amount) VALUES ((SELECT id FROM player WHERE name = ? ORDER BY id ASC), (SELECT id FROM player WHERE name = ? ORDER BY id ASC), ?, ?, ?)',
+            [s.p1name, s.p2name, s.status==="1"? 1:2, s.p1total.replace(/,/g,''), s.p2total.replace(/,/g,'')],
+            function(err) {
+              if(err) console.log(err);
+          }).get();
+        });
       });
     }
   });
