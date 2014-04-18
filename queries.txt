@@ -6,9 +6,32 @@ INSERT INTO fight (p1, p2, winner, p1amount, p2amount) VALUES ($player1, $player
 
 SELECT id FROM player WHERE name = $name
 
-
+--all players
 SELECT id, name FROM player ORDER BY id
+
+
+--single person's profits
+SELECT name, SUM(profit) FROM
+(SELECT name, SUM(p1amount) as profit FROM player, fight WHERE p1 = player.id AND player.name = ?
+UNION
+SELECT name, SUM(p2amount) as profit FROM player, fight WHERE p2 = player.id AND player.name = ?)
+
+--all persons' profits, sorted by amount
+SELECT name, SUM(profit) as totalprofit FROM
+(SELECT name, SUM(p1amount) as profit FROM player, fight WHERE p1 = player.id GROUP BY p1
+UNION
+SELECT name, SUM(p2amount) as profit FROM player, fight WHERE p2 = player.id GROUP BY p2)
+GROUP BY name
+ORDER BY totalprofit DESC
+
+--ranking of wins for a particular set of players
+SELECT name, COUNT(*) as wins FROM player, fight WHERE ((p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2)) AND (player.name = ? OR player.name = ?) GROUP BY player.id
+
+--ranking of wins
 SELECT name, COUNT(*) as wins FROM player, fight WHERE (p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2) GROUP BY player.id ORDER BY wins DESC
+
+--ranking of matches
 SELECT COUNT(*) as matches, p1.name as p1name, p2.name as p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id GROUP BY p1, p2, winner
 
+--matches for a particular pairing
 SELECT COUNT(*) as matches, p1.name as p1name, p2.name as p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id AND ((p1.name = ?1 AND p2.name = ?2) OR (p1.name = ?2 AND p2.name = ?1)) GROUP BY p1, p2, winner

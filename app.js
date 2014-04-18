@@ -60,7 +60,10 @@ function getRecommendation(player1, player2) {
     [player1, player2], function(err, rows) {
       var player1wins = 0,
       player2wins = 0,
-      winDifference;
+      winDifference = 0,
+      player1totalwins = 0,
+      player2totalwins = 0;
+
       for(i = 0; i < rows.length; i++) {
         if(rows[i].p1name == player1) {
           if(rows[i].winner == 1) {
@@ -78,7 +81,17 @@ function getRecommendation(player1, player2) {
           }
         }
       }
-      db.all(function(err, rows) {
+      db.all('SELECT name, COUNT(*) as wins FROM player, fight WHERE ((p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2)) AND (player.name = ? OR player.name = ?) GROUP BY player.id',
+        [player1, player2], function(err, rows) {
+        for(i = 0; i < rows.length; i++) {
+          if(rows[i].name == player1) {
+            player1totalwins = rows[i].wins;
+          }
+          else {
+            player2totalwins = rows[i].wins;
+          }
+        }
+
         winDifference = player1wins - player2wins;
         if((player1wins > 3 || player2wins > 3) && Math.abs(winDifference) > 2) {
             recommendation = player1wins > player2wins? 1 : 2;
@@ -91,13 +104,13 @@ function getRecommendation(player1, player2) {
         switch(recommendation)
         {
           case 0:
-            console.log('recommendation for this fight: neither. odds: '+recommendationOdds+' soft odds: ');
+            console.log('recommendation for this fight: neither. odds: '+recommendationOdds+' soft odds: '+player1totalwins+':'+player2totalwins);
             break;
           case 1:
-            console.log('recommendation for this fight: '+player1+'. odds: '+recommendationOdds+' soft odds: ');
+            console.log('recommendation for this fight: '+player1+'. odds: '+recommendationOdds+' soft odds: '+player1totalwins+':'+player2totalwins);
             break;
           case 2:
-            console.log('recommendation for this fight: '+player2+'. odds: '+recommendationOdds+' soft odds: ');
+            console.log('recommendation for this fight: '+player2+'. odds: '+recommendationOdds+' soft odds: '+player2totalwins+':'+player1totalwins);
             break;
         }
       });
@@ -111,7 +124,7 @@ function updateState() {
     //betting things
     if(s.status == "open") {
       getRecommendation(s.p1name, s.p2name);
-      if(Math.random() > 0.99) {
+      if(false) {
         placeBet();
       }
     }
@@ -125,7 +138,7 @@ function updateState() {
           if(err) console.log(err);
         });
         var stmnt = db.prepare('INSERT INTO fight (p1, p2, winner, p1amount, p2amount) VALUES ((SELECT id FROM player WHERE name = ?), (SELECT id FROM player WHERE name = ?), ?, ?, ?)',
-          [s.p1name, s.p2name, s.status==="1"? 1:2, s.p1total, s.p2total],
+          [s.p1name, s.p2name, s.status==="1"? 1:2, s.p1total.replace(/,/g,''), s.p2total.replace(/,/g,'')],
           function(err) {
             if(err) console.log(err);
         }).get();
@@ -157,9 +170,10 @@ if(config.serveApi) {
     var ranking = [];
     var matchrecord = [];
     var players = [];
+    var bigwinners = [];
     var start = 0;
-    if(typeof params[1] === 'number') {
-      start = (params[1]-params[1]%1) * 40;
+    if(typeof params[1] !== 'undefined') {
+      start = Math.max((parseInt((params[1]-params[1]%1))-1) * 40, 0);
     }
  
     var playerListing = function() {
@@ -191,20 +205,38 @@ if(config.serveApi) {
         output();
       });
     },
+    winningsRanking = function() {
+      db.each('SELECT name, SUM(profit) as totalprofit FROM '
+            +'(SELECT name, SUM(p1amount) as profit FROM player, fight WHERE p1 = player.id GROUP BY p1 '
+            +'UNION '
+            +'SELECT name, SUM(p2amount) as profit FROM player, fight WHERE p2 = player.id GROUP BY p2) '
+            +'GROUP BY name '
+            +'ORDER BY totalprofit DESC '
+            +'LIMIT ?, 40',
+      [start], function(err, row) {
+        if(err) console.log(err);
+        bigwinners.push({name: row.name, profit: row.totalprofit});
+      }, function(err, numRows) {
+        if(err) console.log(err);
+        output();
+      });
+    },
     output = function() {
       if(ranking.length > 0) {
         res.write(JSON.stringify({salt: mySaltyBucks, leaderboard: ranking}));
       }
       else if(matchrecord.length > 0) {
-        res.write(JSON.stringify({salt: mySaltyBucks, matchrecord: matchrecord}));
+        res.write(JSON.stringify({salt: mySaltyBucks, matchuptable: matchrecord}));
       }
       else if(players.length > 0) {
         res.write(JSON.stringify({salt: mySaltyBucks, playerlisting: players}));
       }
+      else if(bigwinners.length > 0) {
+        res.write(JSON.stringify({salt: mySaltyBucks, winningsranking: bigwinners}));
+      }
       else {
         res.write(JSON.stringify({salt: mySaltyBucks}));
       }
-      //players: players, ranking: ranking, matchrecord: matchrecord
       res.end();
     };
 
@@ -218,6 +250,9 @@ if(config.serveApi) {
         break;
       case 'matchuptable':
         matchupTable();
+        break;
+      case 'winningsranking':
+        winningsRanking();
         break;
       default:
         output();
