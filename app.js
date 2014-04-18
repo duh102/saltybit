@@ -207,9 +207,9 @@ if(config.serveApi) {
     },
     winningsRanking = function() {
       db.each('SELECT name, SUM(profit) as totalprofit FROM '
-            +'(SELECT name, SUM(p1amount) as profit FROM player, fight WHERE p1 = player.id GROUP BY p1 '
+            +'(SELECT name, SUM(p2amount) as profit FROM player, fight WHERE p1 = player.id AND winner = 1 GROUP BY p1 '
             +'UNION '
-            +'SELECT name, SUM(p2amount) as profit FROM player, fight WHERE p2 = player.id GROUP BY p2) '
+            +'SELECT name, SUM(p1amount) as profit FROM player, fight WHERE p2 = player.id AND winner = 2 GROUP BY p2) '
             +'GROUP BY name '
             +'ORDER BY totalprofit DESC '
             +'LIMIT ?, 40',
