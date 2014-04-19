@@ -5,6 +5,7 @@
   "main": "app.js",
   "dependencies": {
     "request": "~2.27.0",
+    "socket.io": "~0.9.16",
     "socket.io-client": "~0.9.16",
     "sqlite3": "~2.1.19"
   },

@@ -3,6 +3,8 @@ module.exports = {
   password: "pass",
   name: "username",
   serveApi: true,
-  apiPort: 3004
+  apiPort: 3004,
+  serveSocket: true,
+  socketPort: 3005
 }
 

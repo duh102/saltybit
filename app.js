@@ -3,6 +3,9 @@ var http = require('http');
 var request = require('request');
 var config = require("./config");
 var sqlite3 = require('sqlite3');
+if(config.serveSocket) {
+  var ioServ = require('socket.io').listen(config.socketPort);
+}
 
 var sock = io.connect("http://www-cdn-twitch.saltybet.com:8000");
 
@@ -13,6 +16,8 @@ var baseLine = null;
 var db = new sqlite3.Database('./salty.db');
 var recommendation = null;
 var recommendationOdds = null;
+var recommendMessage = null;
+var clients = [];
 
 
 request.post('http://www.saltybet.com/authenticate?signin=1')
@@ -104,15 +109,16 @@ function getRecommendation(player1, player2) {
         switch(recommendation)
         {
           case 0:
-            console.log('recommendation for this fight: neither. odds: '+recommendationOdds+' soft odds: '+player1totalwins+':'+player2totalwins);
+            recommendMessage = 'recommendation for this fight: neither. odds: '+recommendationOdds+' soft odds: '+player1totalwins+':'+player2totalwins;
             break;
           case 1:
-            console.log('recommendation for this fight: '+player1+'. odds: '+recommendationOdds+' soft odds: '+player1totalwins+':'+player2totalwins);
+            recommendMessage = 'recommendation for this fight: '+player1+'. odds: '+recommendationOdds+' soft odds: '+player1totalwins+':'+player2totalwins;
             break;
           case 2:
-            console.log('recommendation for this fight: '+player2+'. odds: '+recommendationOdds+' soft odds: '+player2totalwins+':'+player1totalwins);
+            recommendMessage = 'recommendation for this fight: '+player2+'. odds: '+recommendationOdds+' soft odds: '+player2totalwins+':'+player1totalwins;
             break;
         }
+        ioServ.sockets.emit('message', recommendMessage);
       });
     });
 }
@@ -276,4 +282,21 @@ if(config.serveApi) {
     }
 
   }).listen(config.apiPort);
+}
+
+if(config.serveSocket) {
+  ioServ.sockets.on('connection', function (socket) {
+    socket.clientIndex = clients.push(socket)-1;
+    console.log('client '+socket.clientIndex+' connected');
+    socket.emit('message', 'No recommendation yet, wait for next match');
+
+    socket.on('disconnect', function () {
+      var index = clients.indexOf(socket);
+      if(index >= 0) clients.splice(index, 1);
+    });
+
+    socket.on('message', function(message) {
+      console.log(message);
+    });
+  });
 }
