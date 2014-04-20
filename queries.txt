@@ -56,3 +56,23 @@ LEFT OUTER JOIN
 ON p1.id = p2.id)) plose
 ON pwin.id = plose.id
 ORDER BY ((pwin.wins+3)/(plose.losses+3)) DESC, pwin.wins DESC
+
+--same as above but with a specific two people
+SELECT pwin.id AS id, pwin.name AS name, pwin.wins AS wins, plose.losses AS losses FROM
+(SELECT p1.id, p1.name, coalesce(wins, 0) AS wins FROM
+((SELECT id, name from player WHERE (name = ?1 OR name = ?2)) p1
+LEFT OUTER JOIN
+(SELECT id, COUNT(*) AS wins FROM player, fight WHERE
+(p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2)
+ GROUP BY player.id) p2
+ON p1.id = p2.id)) pwin
+INNER JOIN
+(SELECT p1.id, p1.name, coalesce(losses, 0) AS losses FROM
+((SELECT id, name from player WHERE (name = ?1 OR name = ?2)) p1
+LEFT OUTER JOIN
+(SELECT id, COUNT(*) AS losses FROM player, fight WHERE
+(p1 = player.id AND winner = 2) OR (p2 = player.id AND winner = 1)
+ GROUP BY player.id) p2
+ON p1.id = p2.id)) plose
+ON pwin.id = plose.id
+ORDER BY ((pwin.wins+3)/(plose.losses+3)) DESC, pwin.wins DESC

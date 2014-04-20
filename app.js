@@ -15,8 +15,6 @@ var mySaltyBucks = null;
 var baseLine = null;
 var db = new sqlite3.Database('./salty.db');
 var recommendation = null;
-var recommendationOdds = null;
-var recommendMessage = null;
 var clients = [];
 
 
@@ -67,7 +65,9 @@ function getRecommendation(player1, player2) {
       player2wins = 0,
       winDifference = 0,
       player1totalwins = 0,
-      player2totalwins = 0;
+      player2totalwins = 0,
+      player1totallosses = 0,
+      player2totallosses = 0;
 
       for(i = 0; i < rows.length; i++) {
         if(rows[i].p1name == player1) {
@@ -86,46 +86,51 @@ function getRecommendation(player1, player2) {
           }
         }
       }
-      db.all('SELECT name, COUNT(*) as wins FROM player, fight WHERE ((p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2)) AND (player.name = ? OR player.name = ?) GROUP BY player.id',
+      db.all('SELECT pwin.id AS id, pwin.name AS name, pwin.wins AS wins, plose.losses AS losses FROM '
+            +'(SELECT p1.id, p1.name, coalesce(wins, 0) AS wins FROM '
+            +'((SELECT id, name from player WHERE (name = ?1 OR name = ?2)) p1 '
+            +'LEFT OUTER JOIN '
+            +'(SELECT id, COUNT(*) AS wins FROM player, fight WHERE '
+            +'(p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2) '
+            +' GROUP BY player.id) p2 '
+            +'ON p1.id = p2.id)) pwin '
+            +'INNER JOIN '
+            +'(SELECT p1.id, p1.name, coalesce(losses, 0) AS losses FROM '
+            +'((SELECT id, name from player WHERE (name = ?1 OR name = ?2)) p1 '
+            +'LEFT OUTER JOIN '
+            +'(SELECT id, COUNT(*) AS losses FROM player, fight WHERE '
+            +'(p1 = player.id AND winner = 2) OR (p2 = player.id AND winner = 1) '
+            +' GROUP BY player.id) p2 '
+            +'ON p1.id = p2.id)) plose '
+            +'ON pwin.id = plose.id '
+            +'ORDER BY ((pwin.wins+3)/(plose.losses+3)) DESC, pwin.wins DESC',
         [player1, player2], function(err, rows) {
         for(i = 0; i < rows.length; i++) {
           if(rows[i].name == player1) {
             player1totalwins = rows[i].wins;
+            player1totallosses = rows[i].losses;
           }
           else {
             player2totalwins = rows[i].wins;
+            player2totallosses = rows[i].losses;
           }
         }
 
         winDifference = player1wins - player2wins;
         if((player1wins > 3 || player2wins > 3) && Math.abs(winDifference) > 2) {
             recommendation = player1wins > player2wins? 1 : 2;
-            recommendationOdds = player1wins > player2wins? player1wins+":"+player2wins : player2wins+":"+player1wins;
         }
         else {
           recommendation = 0;
-          recommendationOdds = player1wins+":"+player2wins;
         }
-        switch(recommendation)
-        {
-          case 0:
-            recommendMessage = 'recommendation for this fight: neither. odds: '+recommendationOdds+' soft odds: '+player1totalwins+':'+player2totalwins;
-            break;
-          case 1:
-            recommendMessage = 'recommendation for this fight: '+player1+'. odds: '+recommendationOdds+' soft odds: '+player1totalwins+':'+player2totalwins;
-            break;
-          case 2:
-            recommendMessage = 'recommendation for this fight: '+player2+'. odds: '+recommendationOdds+' soft odds: '+player2totalwins+':'+player1totalwins;
-            break;
-        }
-        ioServ.sockets.emit('message', recommendMessage);
+        ioServ.sockets.emit('message', JSON.stringify({msgtype: 'recommend', p1: {name: player1, wins: player1totalwins, losses: player1totallosses, matchwins: player1wins},
+          p2: {name: player2, wins: player2totalwins, losses: player2totallosses, matchwins: player2wins}, recommendation: recommendation}));
       });
     });
 }
 
 function updateState() {
   request("http://www.saltybet.com/state.json", function(e,r,body) {
-    console.log(body);
     var s = JSON.parse(body);
     //betting things
     if(s.status == "open") {
@@ -288,7 +293,7 @@ if(config.serveSocket) {
   ioServ.sockets.on('connection', function (socket) {
     socket.clientIndex = clients.push(socket)-1;
     console.log('client '+socket.clientIndex+' connected');
-    socket.emit('message', 'No recommendation yet, wait for next match');
+    socket.emit('message', JSON.stringify({msgtype: 'init', msg: 'No recommendation yet, wait for next match'}));
 
     socket.on('disconnect', function () {
       var index = clients.indexOf(socket);
