@@ -1,5 +1,5 @@
 $(function() {
-  var socket = io.connect('127.0.0.1:3005');
+  var socket = io.connect("127.0.0.1:3005");
    $('.messageLog').text('Waiting message from server');
   socket.on('message', function (message, callback) {
     var msgObj = JSON.parse(message);
@@ -20,6 +20,26 @@ $(function() {
           break;
         }
         $('.messageLog').text(dateFormat(new Date(), "dd/mm/yy h:MM:ss TT")+": "+txt);
+        break;
+      case 'leaderboard':
+        //({msgtype: 'leaderboard', data: [{name: row.name, wins: row.wins, losses: row.losses},...]}
+        var table = 'Last updated: '+dateFormat(new Date(), "dd/mm/yy h:MM:ss TT")
+                  +'\n<table>\n\t<tr><th>Player</th><th>Wins</th><th>Losses</th></tr>\n';
+        msgObj.data.forEach(function(row) {
+          table+='\t<tr><td>'+row.name+'</td><td>'+row.wins.toLocaleString()+'</td><td>'+row.losses.toLocaleString()+'</td></tr>\n';
+        });
+        table+='\n</table>';
+        $('.leaderboard').html(table);
+        break;
+      case 'winningsranking':
+        //{msgtype: 'winningsranking', data: [{name: row.name, profit: row.totalprofit},...]}
+        var table = 'Last updated: '+dateFormat(new Date(), "dd/mm/yy h:MM:ss TT")
+                  +'\n<table>\n\t<tr><th>Player</th><th>Profit</th></tr>\n';
+        msgObj.data.forEach(function(row) {
+          table+='\t<tr><td>'+row.name+'</td><td>$'+row.profit.toLocaleString()+'</td></tr>\n';
+        });
+        table+='\n</table>';
+        $('.winningsranking').html(table);
         break;
       case 'init':
         //{msgtype: 'init', msg: 'message...'}

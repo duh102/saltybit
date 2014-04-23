@@ -24,6 +24,13 @@ SELECT name, SUM(p1amount) AS profit FROM player, fight WHERE p2 = player.id AND
 GROUP BY name
 ORDER BY totalprofit DESC
 
+select name, sum(profit) as tprofit from
+(select id, name, sum(p2amount) as profit from player, fight where p1 = player.id and winner = 1 group by p1
+union
+select id, name, sum(p1amount) as profit from player, fight where p2 = player.id and winner = 2 group by p2)
+group by id order by tprofit desc limit 0,10;
+
+
 --ranking of wins for a particular set of players
 SELECT name, COUNT(*) AS wins FROM player, fight WHERE ((p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2)) AND (player.name = ? OR player.name = ?) GROUP BY player.id
 

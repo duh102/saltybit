@@ -4,7 +4,7 @@ var request = require('request');
 var config = require("./config");
 var sqlite3 = require('sqlite3');
 if(config.serveSocket) {
-  var ioServ = require('socket.io').listen(config.socketPort);
+  var ioServ = require('socket.io').listen(config.socketPort).set('log level', 0);
 }
 
 var sock = io.connect("http://www-cdn-twitch.saltybet.com:8000");
@@ -16,6 +16,10 @@ var baseLine = null;
 var db = new sqlite3.Database('./salty.db');
 var recommendation = null;
 var clients = [];
+var leaderboardUTD = false,
+winningsUTD = false;
+var firstPageLeaderboard = [],
+firstPageWinningsRanking = [];
 
 
 request.post('http://www.saltybet.com/authenticate?signin=1')
@@ -141,16 +145,29 @@ function updateState() {
     }
     //logging outcomes
     else if(s.status === "1" || s.status === "2") {
-      //keeping the in-memory hash up to date
-        db.run('INSERT OR IGNORE INTO player (name) VALUES (?)', [s.p1name], function(err) {
+      db.run('INSERT OR IGNORE INTO player (name) VALUES (?)', [s.p1name], function(err) {
+        if(err) console.log(err);
+        db.run('INSERT OR IGNORE INTO player (name) VALUES (?)', [s.p2name], function(err) {
           if(err) console.log(err);
-          db.run('INSERT OR IGNORE INTO player (name) VALUES (?)', [s.p2name], function(err) {
-            if(err) console.log(err);
-            var stmnt = db.prepare('INSERT INTO fight (p1, p2, winner, p1amount, p2amount) VALUES ((SELECT id FROM player WHERE name = ? ORDER BY id ASC), (SELECT id FROM player WHERE name = ? ORDER BY id ASC), ?, ?, ?)',
+          var stmnt = db.prepare('INSERT INTO fight (p1, p2, winner, p1amount, p2amount) VALUES ((SELECT id FROM player WHERE name = ? ORDER BY id ASC), (SELECT id FROM player WHERE name = ? ORDER BY id ASC), ?, ?, ?)',
             [s.p1name, s.p2name, s.status==="1"? 1:2, s.p1total.replace(/,/g,''), s.p2total.replace(/,/g,'')],
             function(err) {
               if(err) console.log(err);
-          }).get();
+          }).get({}, function(err, row) {
+            leaderboardUTD = false;
+            winningsUTD = false;
+
+            getLeaderboard(0, function(leader) {
+              firstPageLeaderboard = leader;
+              leaderboardUTD = true;
+              updateClientTables();
+            });
+            getWinningsRanking(0, function(ranking) {
+              firstPageWinningsRanking = ranking;
+              winningsUTD = true;
+              updateClientTables();
+            });
+          });
         });
       });
     }
@@ -171,89 +188,93 @@ function updateState() {
   });
 }
 
-  
+function updateClientTables() {
+  if(leaderboardUTD && winningsUTD) {
+    ioServ.sockets.emit('message', JSON.stringify({msgtype: 'leaderboard', data: firstPageLeaderboard}));
+    ioServ.sockets.emit('message', JSON.stringify({msgtype: 'winningsranking', data: firstPageWinningsRanking}));
+  }
+}
+
+function updateClientTable(socket) {
+  if(leaderboardUTD && winningsUTD) {
+    socket.emit('message', JSON.stringify({msgtype: 'leaderboard', data: firstPageLeaderboard}));
+    socket.emit('message', JSON.stringify({msgtype: 'winningsranking', data: firstPageWinningsRanking}));
+  }
+}
+
+function getPlayerListing(start, callback) {
+  var players = [];
+  db.each('SELECT id, name FROM player ORDER BY id LIMIT ?, 40', [start], function(err, row) {
+    if(err) console.log(err);
+    players[row.id] = row.name;
+  }, function(err, numRows) {
+    if(err) console.log(err);
+    callback(players);
+  });
+}
+
+function getLeaderboard(start, callback) {
+  var ranking = [];
+  db.each('SELECT pwin.id AS id, pwin.name AS name, pwin.wins AS wins, plose.losses AS losses FROM '
+        +'(SELECT p1.id, p1.name, coalesce(wins, 0) AS wins FROM '
+        +'((SELECT id, name from player) p1 '
+        +'LEFT OUTER JOIN '
+        +'(SELECT id, COUNT(*) AS wins FROM player, fight WHERE '
+        +'(p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2) '
+        +' GROUP BY player.id) p2 '
+        +'ON p1.id = p2.id)) pwin '
+        +'INNER JOIN '
+        +'(SELECT p1.id, p1.name, coalesce(losses, 0) AS losses FROM '
+        +'((SELECT id, name from player) p1 '
+        +'LEFT OUTER JOIN '
+        +'(SELECT id, COUNT(*) AS losses FROM player, fight WHERE '
+        +'(p1 = player.id AND winner = 2) OR (p2 = player.id AND winner = 1) '
+        +' GROUP BY player.id) p2 '
+        +'ON p1.id = p2.id)) plose '
+        +'ON pwin.id = plose.id '
+        +'ORDER BY ((pwin.wins+3)/(plose.losses+3)) DESC, pwin.wins DESC LIMIT ?, 40',
+  [start], function(err, row) {
+    if(err) console.log(err);
+    ranking.push({name: row.name, wins: row.wins, losses: row.losses});
+  }, function(err, numRows) {
+    if(err) console.log(err);
+    callback(ranking);
+  });
+}
+
+function getWinningsRanking(start, callback) {
+  var bigwinners = [];
+  db.each('SELECT name, SUM(profit) as totalprofit FROM '
+        +'(SELECT name, SUM(p2amount) as profit FROM player, fight WHERE p1 = player.id AND winner = 1 GROUP BY p1 '
+        +'UNION '
+        +'SELECT name, SUM(p1amount) as profit FROM player, fight WHERE p2 = player.id AND winner = 2 GROUP BY p2) '
+        +'GROUP BY name '
+        +'ORDER BY totalprofit DESC '
+        +'LIMIT ?, 40',
+  [start], function(err, row) {
+    if(err) console.log(err);
+    bigwinners.push({name: row.name, profit: row.totalprofit});
+  }, function(err, numRows) {
+    if(err) console.log(err);
+    callback(bigwinners);
+  });
+}
 
 if(config.serveApi) {
   http.createServer(function(req,res) {
+    var bigwinners = [];
+    var ranking = [];
+    var players = [];
     var params = req.url.split(/\//);
     params.shift();
-    var ranking = [];
-    var matchrecord = [];
-    var players = [];
-    var bigwinners = [];
     var start = 0;
     if(typeof params[1] !== 'undefined') {
       start = Math.max((parseInt((params[1]-params[1]%1))-1) * 40, 0);
     }
  
-    var playerListing = function() {
-      db.each('SELECT id, name FROM player ORDER BY id LIMIT ?, 40', [start], function(err, row) {
-        if(err) console.log(err);
-        players[row.id] = row.name;
-      }, function(err, numRows) {
-        if(err) console.log(err);
-        output();
-      });
-    },
-    leaderboard = function() {
-      db.each('SELECT pwin.id AS id, pwin.name AS name, pwin.wins AS wins, plose.losses AS losses FROM '
-            +'(SELECT p1.id, p1.name, coalesce(wins, 0) AS wins FROM '
-            +'((SELECT id, name from player) p1 '
-            +'LEFT OUTER JOIN '
-            +'(SELECT id, COUNT(*) AS wins FROM player, fight WHERE '
-            +'(p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2) '
-            +' GROUP BY player.id) p2 '
-            +'ON p1.id = p2.id)) pwin '
-            +'INNER JOIN '
-            +'(SELECT p1.id, p1.name, coalesce(losses, 0) AS losses FROM '
-            +'((SELECT id, name from player) p1 '
-            +'LEFT OUTER JOIN '
-            +'(SELECT id, COUNT(*) AS losses FROM player, fight WHERE '
-            +'(p1 = player.id AND winner = 2) OR (p2 = player.id AND winner = 1) '
-            +' GROUP BY player.id) p2 '
-            +'ON p1.id = p2.id)) plose '
-            +'ON pwin.id = plose.id '
-            +'ORDER BY ((pwin.wins+3)/(plose.losses+3)) DESC, pwin.wins DESC LIMIT ?, 40',
-      [start], function(err, row) {
-        if(err) console.log(err);
-        ranking.push({name: row.name, wins: row.wins, losses: row.losses});
-      }, function(err, numRows) {
-        if(err) console.log(err);
-        output();
-      });
-    },
-    matchupTable = function() {
-      db.each('SELECT COUNT(*) as matches, p1.name as p1name, p2.name as p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id GROUP BY p1, p2, winner LIMIT ?, 40',
-      [start], function(err, row) {
-        if(err) console.log(err);
-        matchrecord.push({wins: row.matches,p1: row.p1name, p2: row.p2name, winner: row.winner});
-      }, function(err, numRows) {
-        if(err) console.log(err);
-        output();
-      });
-    },
-    winningsRanking = function() {
-      db.each('SELECT name, SUM(profit) as totalprofit FROM '
-            +'(SELECT name, SUM(p2amount) as profit FROM player, fight WHERE p1 = player.id AND winner = 1 GROUP BY p1 '
-            +'UNION '
-            +'SELECT name, SUM(p1amount) as profit FROM player, fight WHERE p2 = player.id AND winner = 2 GROUP BY p2) '
-            +'GROUP BY name '
-            +'ORDER BY totalprofit DESC '
-            +'LIMIT ?, 40',
-      [start], function(err, row) {
-        if(err) console.log(err);
-        bigwinners.push({name: row.name, profit: row.totalprofit});
-      }, function(err, numRows) {
-        if(err) console.log(err);
-        output();
-      });
-    },
-    output = function() {
+    var output = function() {
       if(ranking.length > 0) {
         res.write(JSON.stringify({salt: mySaltyBucks, leaderboard: ranking}));
-      }
-      else if(matchrecord.length > 0) {
-        res.write(JSON.stringify({salt: mySaltyBucks, matchuptable: matchrecord}));
       }
       else if(players.length > 0) {
         res.write(JSON.stringify({salt: mySaltyBucks, playerlisting: players}));
@@ -270,16 +291,40 @@ if(config.serveApi) {
     switch(params[0])
     {
       case 'playerlisting':
-        playerListing();
+        if(start > 0) {
+          getPlayerListing(start, function(tempPlayer) {
+            players = tempPlayer;
+            output();
+          });
+        }
+        else {
+          players = firstPagePlayerList;
+          output();
+        }
         break;
       case 'leaderboard':
-        leaderboard();
-        break;
-      case 'matchuptable':
-        matchupTable();
+        if(start > 0) {
+          getLeaderboard(start, function(tempBoard) {
+            ranking = tempBoard;
+            output();
+          });
+        }
+        else {
+          ranking = firstPageLeaderboard;
+          output();
+        }
         break;
       case 'winningsranking':
-        winningsRanking();
+        if(start > 0) {
+          getWinningsRanking(start, function(tempWinnings) {
+            bigwinners = tempWinnings;
+            output();
+          });
+        }
+        else {
+          bigwinners = firstPageWinningsRanking;
+          output();
+        }
         break;
       default:
         output();
@@ -294,10 +339,11 @@ if(config.serveSocket) {
     socket.clientIndex = clients.push(socket)-1;
     console.log('client '+socket.clientIndex+' connected');
     socket.emit('message', JSON.stringify({msgtype: 'init', msg: 'No recommendation yet, wait for next match'}));
+    updateClientTable(socket);
 
     socket.on('disconnect', function () {
-      var index = clients.indexOf(socket);
-      if(index >= 0) clients.splice(index, 1);
+      console.log('client '+socket.clientIndex+' disconnected');
+      if(socket.clientIndex >= 0) clients.splice(socket.clientIndex, 1);
     });
 
     socket.on('message', function(message) {

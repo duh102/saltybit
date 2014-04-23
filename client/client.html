@@ -2,11 +2,35 @@
 <html>
   <head>
     <title>SaltyBet Suggestions</title>
+    <link rel="stylesheet" type="text/css" href="client.css">
   </head>
   <body>
-    <h3>Current suggestion:</h3>
-    <p class="messageLog">
-    </p>
+    <div class="tbody">
+      <div class="theader">Current Suggestion</div>
+      <div class="messageLog">
+        here is a line of text that will be replaced quickly
+      </div>
+    </div>
+    <div class='fleft'>
+      <div class='tbody'>
+        <div class='theader'>Leaderboard</div>
+        <div class='leaderboard'>
+          <table>
+            <tr><th>No data yet</th></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class='fright'>
+      <div class='tbody'>
+        <div class='theader'>Top Moneymakers</div>
+        <div class='winningsranking'>
+          <table>
+            <tr><th>No data yet</th></tr>
+          </table>
+        </div>
+      </div>
+    </div>
     <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
     <script type="text/javascript" src="../node_modules/socket.io-client/dist/socket.io.min.js"></script>
     <script type="text/javascript" src="./date.format.js"></script>
