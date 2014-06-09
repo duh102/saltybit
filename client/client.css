@@ -89,22 +89,53 @@ body {
 .tbody table {
   margin-top: 20px;
   width: 100%;
+}
+.tbody td, th {
+  padding: 3px;
   border-spacing: 0px;
-  border-collapse: separate;
 }
 .tbody th {
   background-color: #35D3A7;
-  padding: 3px 5px;
   font-weight: bold;
   font-family: Helvetica;
   text-align: left;
-  border-bottom: 2px solid #006D4F;
 }
-.tbody td {
-  padding: 2px 2px;
-}
-.tbody tr:nth-child(odd) {
+.tbody tr:nth-child(odd) td {
   background-color: #5FD3B3;
+}
+.tbody tr:nth-child(odd) td:first-child {
+  -webkit-border-top-left-radius: 15px;
+  -webkit-border-bottom-left-radius: 15px;
+  -moz-border-radius-topleft: 15px;
+  -moz-border-radius-bottomleft: 15px;
+  border-top-left-radius: 15px;
+  border-bottom-left-radius: 15px;
+  padding-left: 10px;
+}
+.tbody tr:nth-child(odd) td:last-child {
+  -webkit-border-top-right-radius: 15px;
+  -webkit-border-bottom-right-radius: 15px;
+  -moz-border-radius-topright: 15px;
+  -moz-border-radius-bottomright: 15px;
+  border-top-right-radius: 15px;
+  border-bottom-right-radius: 15px;
+}
+.tbody th:first-child {
+  -webkit-border-top-left-radius: 15px;
+  -webkit-border-bottom-left-radius: 15px;
+  -moz-border-radius-topleft: 15px;
+  -moz-border-radius-bottomleft: 15px;
+  border-top-left-radius: 15px;
+  border-bottom-left-radius: 15px;
+  padding-left: 10px;
+}
+.tbody th:last-child {
+  -webkit-border-top-right-radius: 15px;
+  -webkit-border-bottom-right-radius: 15px;
+  -moz-border-radius-topright: 15px;
+  -moz-border-radius-bottomright: 15px;
+  border-top-right-radius: 15px;
+  border-bottom-right-radius: 15px;
 }
 .theader~div {
   padding: 10px;

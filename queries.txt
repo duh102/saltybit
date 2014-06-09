@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS player(id INTEGER primary key, name TEXT)
 CREATE TABLE IF NOT EXISTS fight(p1 INTEGER, p2 INTEGER, winner INTEGER, p1amount INTEGER, p2amount INTEGER, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(p1) REFERENCES player(id), FOREIGN KEY(p2) REFERENCES player(id))
+CREATE VIEW IF NOT EXISTS nonTeamPlayers AS SELECT * FROM player WHERE name NOT LIKE "%Team%"
 
 INSERT INTO player (name) VALUES ($name)
 INSERT INTO fight (p1, p2, winner, p1amount, p2amount) VALUES ($player1, $player2, $winner, $player1amount, $player2amount)
@@ -7,7 +8,7 @@ INSERT INTO fight (p1, p2, winner, p1amount, p2amount) VALUES ($player1, $player
 SELECT id FROM player WHERE name = $name
 
 --all players
-SELECT id, name FROM player ORDER BY id
+SELECT id, name FROM player ORDER BY id LIMIT 0,40;
 
 
 --single person's profits
@@ -29,6 +30,30 @@ select name, sum(profit) as tprofit from
 union
 select id, name, sum(p1amount) as profit from player, fight where p2 = player.id and winner = 2 group by p2)
 group by id order by tprofit desc limit 0,10;
+
+
+--single person's number of matches
+SELECT name, SUM(matches) FROM
+(SELECT name, COUNT(player.id) AS matches FROM player, fight WHERE p1 = player.id AND player.name = ?
+UNION
+SELECT name, COUNT(player.id) AS matches FROM player, fight WHERE p2 = player.id AND player.name = ?)
+
+--all persons' number of matches, sorted by number
+SELECT name, SUM(matches) AS totalmatches FROM
+(SELECT name, COUNT(player.id) AS matches FROM player, fight WHERE p1 = player.id GROUP BY p1
+UNION
+SELECT name, COUNT(player.id) AS matches FROM player, fight WHERE p2 = player.id GROUP BY p2)
+GROUP BY name
+ORDER BY totalmatches DESC
+
+--experiment: non-team player version of the above
+
+SELECT name, SUM(matches) AS totalmatches FROM
+(SELECT name, COUNT(nonTeamPlayers.id) AS matches FROM nonTeamPlayers, fight WHERE p1 = nonTeamPlayers.id GROUP BY p1
+UNION
+SELECT name, COUNT(nonTeamPlayers.id) AS matches FROM nonTeamPlayers, fight WHERE p2 = nonTeamPlayers.id GROUP BY p2)
+GROUP BY name
+ORDER BY totalmatches DESC
 
 
 --ranking of wins for a particular set of players
@@ -83,3 +108,31 @@ LEFT OUTER JOIN
 ON p1.id = p2.id)) plose
 ON pwin.id = plose.id
 ORDER BY ((pwin.wins+3)/(plose.losses+3)) DESC, pwin.wins DESC
+
+--number of players
+SELECT COUNT(*) AS players FROM player;
+
+--number of players, not counting teams
+SELECT COUNT(*) AS players FROM player WHERE name NOT LIKE '%Team%';
+
+--number of fights
+SELECT COUNT(*) AS fights FROM fight;
+
+--number of fights, not counting matches involving teams
+SELECT COUNT(*) AS fights FROM fight WHERE p1 NOT IN (SELECT id FROM player WHERE name LIKE '%Team%') AND p2 NOT IN (SELECT id FROM player WHERE name LIKE '%Team%');
+
+--players by when they were first recorded
+SELECT pl1.id, pl1.name, f1.timestamp FROM player pl1, fight f1 WHERE (pl1.id = f1.p1 OR pl1.id = f1.p2) AND timestamp <= (SELECT MIN(timestamp) FROM fight f2 WHERE pl1.id = f2.p1 OR pl1.id = f2.p2) ORDER BY pl1.id LIMIT 0,40;
+
+--new players per day
+SELECT STRFTIME('%Y-%m-%d', timestamp, 'localtime') AS date, count(*) AS players FROM player pl1, fight f1 WHERE (pl1.id = f1.p1 OR pl1.id = f1.p2) AND timestamp <= (SELECT MIN(timestamp) FROM fight f2 WHERE pl1.id = f2.p1 OR pl1.id = f2.p2) GROUP BY STRFTIME('%Y%m%d', timestamp, 'localtime') ORDER BY STRFTIME('%Y%m%d', timestamp, 'localtime') ASC;
+
+--fights by day
+SELECT STRFTIME('%Y-%m-%d', timestamp, 'localtime') AS date, count(*) AS fights FROM fight GROUP BY STRFTIME('%Y%m%d', timestamp, 'localtime') ORDER BY STRFTIME('%Y%m%d', timestamp, 'localtime') ASC;
+
+--fights by day, hour
+SELECT STRFTIME('%Y-%m-%d', timestamp, 'localtime') AS date, STRFTIME('%H', timestamp, 'localtime') as hour, count(*) AS fights FROM fight GROUP BY STRFTIME('%Y%m%d%H', timestamp, 'localtime') ORDER BY STRFTIME('%Y%m%d', timestamp, 'localtime') ASC, STRFTIME('%H', timestamp, 'localtime') ASC;
+
+
+--fights by hour of the day
+SELECT STRFTIME('%H', timestamp, 'localtime') AS hour, count(*) AS fights FROM fight GROUP BY STRFTIME('%H', timestamp, 'localtime') ORDER BY STRFTIME('%H', timestamp, 'localtime') ASC;
