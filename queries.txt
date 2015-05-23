@@ -39,10 +39,10 @@ UNION
 SELECT name, COUNT(player.id) AS matches FROM player, fight WHERE p2 = player.id AND player.name = ?)
 
 --all persons' number of matches, sorted by number
-SELECT name, SUM(matches) AS totalmatches FROM
-(SELECT name, COUNT(player.id) AS matches FROM player, fight WHERE p1 = player.id GROUP BY p1
+SELECT id, name, SUM(matches) AS totalmatches FROM
+(SELECT id, name, COUNT(player.id) AS matches FROM player, fight WHERE p1 = player.id GROUP BY p1
 UNION
-SELECT name, COUNT(player.id) AS matches FROM player, fight WHERE p2 = player.id GROUP BY p2)
+SELECT id, name, COUNT(player.id) AS matches FROM player, fight WHERE p2 = player.id GROUP BY p2)
 GROUP BY name
 ORDER BY totalmatches DESC
 
@@ -67,6 +67,11 @@ SELECT COUNT(*) AS matches, p1.name AS p1name, p2.name AS p2name, winner FROM fi
 
 --matches for a particular pairing
 SELECT COUNT(*) AS matches, p1.name AS p1name, p2.name AS p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id AND ((p1.name = ?1 AND p2.name = ?2) OR (p1.name = ?2 AND p2.name = ?1)) GROUP BY p1, p2, winner
+
+--same as above but before a certain time
+SELECT COUNT(*) AS matches, p1.name AS p1name, p2.name AS p2name, winner FROM fight, player AS p1, player AS p2 WHERE p1 = p1.id AND p2 = p2.id AND ((p1.name = ?1 AND p2.name = ?2) OR (p1.name = ?2 AND p2.name = ?1)) AND timestamp < ?3 GROUP BY p1, p2, winner
+
+
 
 --coalesced win/loss record, sorted by win/loss record deemed more accurate
 --after 3 matches (so 3+ wins with no defeats is better than 6w/3l, but 1w/0l is not)
@@ -109,6 +114,29 @@ ON p1.id = p2.id)) plose
 ON pwin.id = plose.id
 ORDER BY ((pwin.wins+3)/(plose.losses+3)) DESC, pwin.wins DESC
 
+--matches before a given timestamp
+SELECT pwin.id AS id, pwin.name AS name, pwin.wins AS wins, plose.losses AS losses FROM
+(SELECT p1.id, p1.name, coalesce(wins, 0) AS wins FROM
+((SELECT id, name from player WHERE (id = ?1 OR id = ?2)) p1
+LEFT OUTER JOIN
+(SELECT id, COUNT(*) AS wins FROM player, fight WHERE
+((p1 = player.id AND winner = 1) OR (p2 = player.id AND winner = 2))
+ AND timestamp < ?3
+ GROUP BY player.id) p2
+ON p1.id = p2.id)) pwin
+INNER JOIN
+(SELECT p1.id, p1.name, coalesce(losses, 0) AS losses FROM
+((SELECT id, name from player WHERE (id = ?1 OR id = ?2)) p1
+LEFT OUTER JOIN
+(SELECT id, COUNT(*) AS losses FROM player, fight WHERE
+((p1 = player.id AND winner = 2) OR (p2 = player.id AND winner = 1))
+ AND timestamp < ?3
+ GROUP BY player.id) p2
+ON p1.id = p2.id)) plose
+ON pwin.id = plose.id
+ORDER BY ((pwin.wins+3)/(plose.losses+3)) DESC, pwin.wins DESC
+
+
 --win/loss record for the past 5 matches that a given player has been in
 SELECT win.id, win.name, wins, losses FROM
 (SELECT id, name, coalesce(count(*), 0) AS wins FROM
@@ -122,6 +150,23 @@ INNER JOIN
   AND (p1 = player.id OR p2 = player.id) ORDER BY timestamp DESC LIMIT 0,5
  ) p1
 WHERE (id = p1 AND winner = 2) OR (id = p2 AND winner = 1)) loss
+
+--same as above before a given time
+SELECT win.id, win.name, wins, losses FROM
+(SELECT id, name, coalesce(count(*), 0) AS wins FROM
+ (SELECT * FROM player, fight WHERE name = ?1
+  AND (p1 = player.id OR p2 = player.id) AND timestamp < ?2
+  ORDER BY timestamp DESC LIMIT 0,5
+ ) p1
+WHERE (id = p1 AND winner = 1) OR (id = p2 AND winner = 2)) win
+INNER JOIN
+(SELECT id, name, coalesce(count(*), 0) AS losses FROM
+ (SELECT * FROM player, fight WHERE name = ?1
+  AND (p1 = player.id OR p2 = player.id) AND timestamp < ?2
+  ORDER BY timestamp DESC LIMIT 0,5
+ ) p1
+WHERE (id = p1 AND winner = 2) OR (id = p2 AND winner = 1)) loss
+
 
 --number of players
 SELECT COUNT(*) AS players FROM player;
@@ -152,3 +197,6 @@ SELECT STRFTIME('%Y-%m-%d', timestamp, 'localtime') AS date, STRFTIME('%H', time
 
 --fights by hour of the day
 SELECT STRFTIME('%H', timestamp, 'localtime') AS hour, count(*) AS fights FROM fight GROUP BY STRFTIME('%H', timestamp, 'localtime') ORDER BY STRFTIME('%H', timestamp, 'localtime') ASC;
+
+--p1 wins vs p2 wins, irrespective of player configuration
+SELECT DISTINCT winner, count(winner) FROM fight GROUP BY winner;
